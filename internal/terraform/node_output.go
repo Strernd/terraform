@@ -281,9 +281,9 @@ func (n *NodeApplyableOutput) Execute(ctx EvalContext, op walkOperation) (diags 
 		checkRuleSeverity = tfdiags.Warning
 	}
 	checkDiags := evalCheckRules(
-		checkOutputPrecondition,
+		addrs.CheckOutputPrecondition,
 		n.Config.Preconditions,
-		ctx, nil, EvalDataForNoInstanceKey,
+		ctx, n.Addr, EvalDataForNoInstanceKey,
 		checkRuleSeverity,
 	)
 	diags = diags.Append(checkDiags)

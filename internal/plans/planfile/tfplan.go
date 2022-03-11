@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/plans/internal/planproto"
 	"github.com/hashicorp/terraform/internal/states"
+	"github.com/hashicorp/terraform/internal/tfdiags"
 	"github.com/hashicorp/terraform/version"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -58,6 +59,7 @@ func readTfplan(r io.Reader) (*plans.Plan, error) {
 			Resources: []*plans.ResourceInstanceChangeSrc{},
 		},
 		DriftedResources: []*plans.ResourceInstanceChangeSrc{},
+		Conditions:       make(plans.Conditions),
 	}
 
 	switch rawPlan.UiMode {
@@ -86,6 +88,39 @@ func readTfplan(r io.Reader) (*plans.Plan, error) {
 			ChangeSrc: *change,
 			Sensitive: rawOC.Sensitive,
 		})
+	}
+
+	for _, rawCR := range rawPlan.ConditionResults {
+		conditionAddr := rawCR.ConditionAddr
+		cr := &plans.ConditionResult{
+			Result:       rawCR.Result,
+			Unknown:      rawCR.Unknown,
+			ErrorMessage: rawCR.ErrorMessage,
+		}
+		var diags tfdiags.Diagnostics
+		switch rawCR.Type {
+		case planproto.ConditionType_OUTPUT_PRECONDITION:
+			cr.Type = addrs.CheckOutputPrecondition
+			cr.Address, diags = addrs.ParseAbsOutputValueStr(rawCR.Addr)
+			if diags.HasErrors() {
+				return nil, diags.Err()
+			}
+		case planproto.ConditionType_RESOURCE_PRECONDITION:
+			cr.Type = addrs.CheckResourcePrecondition
+			cr.Address, diags = addrs.ParseAbsResourceInstanceStr(rawCR.Addr)
+			if diags.HasErrors() {
+				return nil, diags.Err()
+			}
+		case planproto.ConditionType_RESOURCE_POSTCONDITION:
+			cr.Type = addrs.CheckResourcePostcondition
+			cr.Address, diags = addrs.ParseAbsResourceInstanceStr(rawCR.Addr)
+			if diags.HasErrors() {
+				return nil, diags.Err()
+			}
+		default:
+			return nil, fmt.Errorf("condition result %s has unsupported type %s", rawCR.ConditionAddr, rawCR.Type)
+		}
+		plan.Conditions[conditionAddr] = cr
 	}
 
 	for _, rawRC := range rawPlan.ResourceChanges {
@@ -358,10 +393,11 @@ func writeTfplan(plan *plans.Plan, w io.Writer) error {
 		Version:          tfplanFormatVersion,
 		TerraformVersion: version.String(),
 
-		Variables:       map[string]*planproto.DynamicValue{},
-		OutputChanges:   []*planproto.OutputChange{},
-		ResourceChanges: []*planproto.ResourceInstanceChange{},
-		ResourceDrift:   []*planproto.ResourceInstanceChange{},
+		Variables:        map[string]*planproto.DynamicValue{},
+		OutputChanges:    []*planproto.OutputChange{},
+		ConditionResults: []*planproto.ConditionResult{},
+		ResourceChanges:  []*planproto.ResourceInstanceChange{},
+		ResourceDrift:    []*planproto.ResourceInstanceChange{},
 	}
 
 	switch plan.UIMode {
@@ -398,6 +434,28 @@ func writeTfplan(plan *plans.Plan, w io.Writer) error {
 			Change:    protoChange,
 			Sensitive: oc.Sensitive,
 		})
+	}
+
+	for addr, cr := range plan.Conditions {
+		pcr := &planproto.ConditionResult{
+			Addr:          cr.Address.String(),
+			ConditionAddr: addr,
+			Result:        cr.Result,
+			Unknown:       cr.Unknown,
+			ErrorMessage:  cr.ErrorMessage,
+		}
+		switch cr.Type {
+		case addrs.CheckOutputPrecondition:
+			pcr.Type = planproto.ConditionType_OUTPUT_PRECONDITION
+		case addrs.CheckResourcePrecondition:
+			pcr.Type = planproto.ConditionType_RESOURCE_PRECONDITION
+		case addrs.CheckResourcePostcondition:
+			pcr.Type = planproto.ConditionType_RESOURCE_POSTCONDITION
+		default:
+			return fmt.Errorf("condition result %s has unsupported type %s", addr, cr.Type)
+		}
+
+		rawPlan.ConditionResults = append(rawPlan.ConditionResults, pcr)
 	}
 
 	for _, rc := range plan.Changes.Resources {
