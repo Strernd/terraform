@@ -20,6 +20,10 @@ BUG FIXES:
 * Terraform now prints a warning when adding an attribute to `ignore_changes` that is managed only by the provider (non-optional computed attribute). [GH-30517]
 * Terraform will prioritize local terraform variables over remote terraform variables in operations such as `import`, `plan`, `refresh` and `apply` for workspaces in local execution mode. This behavior applies to both `remote` backend and the `cloud` integration configuration. [GH-29972]
 
+UPGRADE NOTES:
+
+* The Terraform Cloud integration relies on the Go-TFE SDK. Terraform has upgraded this dependency to use its new major version 1.0 [GH-30626]. [More details on the breaking changes introduced by Go-TFE 1.0](https://github.com/hashicorp/go-tfe/releases/tag/v1.0.0).
+
 
 ## Previous Releases
 
