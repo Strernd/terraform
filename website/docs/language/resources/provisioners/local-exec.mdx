@@ -33,6 +33,22 @@ resource "aws_instance" "web" {
 }
 ```
 
+### Using heredoc for splitting a long command over multiple lines
+
+```hcl
+resource "null_resource" "example" {
+  
+  provisioner "local-exec" {
+    command = <<EOT
+      somecmd subcmd\
+      --long-arg-name-one ${my_somewhat_resource.something.arn}\
+      --long-arg-name-two some_constant\
+      --long-arg-name-three ${my_somewhat_resource.something_else.arn}
+  }
+}
+
+```
+
 ## Argument Reference
 
 The following arguments are supported:
